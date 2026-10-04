@@ -28,16 +28,16 @@ func main() {
 
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
-	buf := make([]byte, 1024)
+	
+	resp := NewResp(conn)
 
 	for {
-		n, err := conn.Read(buf)
+		value, err := resp.Read()
 		if err != nil {
 			fmt.Printf("Client %s disconnected or encountered error: %v\n", conn.RemoteAddr().String(), err)
 			return
 		}
-		fmt.Printf("Received %d bytes: %s\n", n, string(buf[:n]))
-		conn.Write(buf[:n])
+		fmt.Printf("Received parsed RESP command: %+v\n", value)
+		conn.Write([]byte("+PONG\r\n"))
 	}
-
 }
