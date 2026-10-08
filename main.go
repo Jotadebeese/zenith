@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -50,15 +52,25 @@ func handleConnection(conn net.Conn, storage *Storage) {
 		switch command {
 		case "PING":
 			conn.Write([]byte("+PONG\r\n"))
+
 		case "SET":
 			if (len(value.array) < 3) {
 				conn.Write([]byte("-ERR wrong number of arguments for 'set' command\r\n"))
 				continue
 			}
 			key := value.array[1].bulk
-			value := value.array[2].bulk
-			storage.Set(key, value)
+			val := value.array[2].bulk
+			var ttl time.Duration
+
+			if len(value.array) >= 5 && strings.ToUpper(value.array[3].bulk) == "EX" {
+				seconds, err := strconv.Atoi(value.array[4].bulk)
+				if err == nil && seconds > 0 {
+					ttl = time.Duration(seconds) * time.Second
+				}
+			}
+			storage.Set(key, val, ttl)
 			conn.Write([]byte("+OK\r\n"))
+
 		case "GET":
 			if (len(value.array) < 2) {
 				conn.Write([]byte("-ERR wrong number of arguments for 'get' command\r\n"))
@@ -71,6 +83,7 @@ func handleConnection(conn net.Conn, storage *Storage) {
 			} else {
 				conn.Write(fmt.Appendf(nil, "$%d\r\n%s\r\n", len(val), val))
 			}
+
 		case "DEL":
 			if (len(value.array) < 2) {
 				conn.Write([]byte("-ERR wrong number of arguments for 'del' command\r\n"))
@@ -79,6 +92,7 @@ func handleConnection(conn net.Conn, storage *Storage) {
 			key := value.array[1].bulk
 			storage.Del(key)
 			conn.Write([]byte("+OK\r\n"))
+			
 		default:
 			conn.Write(fmt.Appendf(nil, "-ERR unknown command '%s'\r\n", command))
 		}
