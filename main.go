@@ -92,9 +92,62 @@ func handleConnection(conn net.Conn, storage *Storage) {
 			key := value.array[1].bulk
 			storage.Del(key)
 			conn.Write([]byte("+OK\r\n"))
+
+		case "VSET":
+			if len(value.array) < 4 {
+				conn.Write([]byte("-ERR wrong number of arguments for 'vset' command\r\n"))
+				continue
+			}
+			key := value.array[1].bulk
+			val := value.array[2].bulk
+			vec, err := ParseVector(value.array[3].bulk)
+			if err != nil {
+				conn.Write([]byte("-ERR invalid vector formar\r\n"))
+				continue
+			}
+
+			var ttl time.Duration
+			if len(value.array) >= 6 && strings.ToUpper(value.array[4].bulk) == "EX" {
+				seconds, err := strconv.Atoi(value.array[5].bulk)
+				if err == nil && seconds > 0 {
+					ttl = time.Duration(seconds) * time.Second
+				}
+			}
+
+			storage.SetVector(key, val, vec, ttl)
+			conn.Write([]byte("+OK\r\n"))
+
+		case "VQUERY":
+			if len(value.array) < 2 {
+				conn.Write([]byte("-ERR wrong number of arguments for 'vquery' command\r\n"))
+				continue
+			}
+			target, err := ParseVector(value.array[1].bulk)
+			if err != nil {
+				conn.Write([]byte("-ERR invalid vector format\r\n"))
+				continue
+			}
+
+			threshold := float32(0.8)
+			if len(value.array) >= 3 {
+				t, err := strconv.ParseFloat(value.array[2].bulk, 32)
+				if err == nil {
+					threshold = float32(t)
+				}
+			}
+
+			match, ok := storage.QueryVector(target, threshold)
+			if !ok {
+				conn.Write([]byte("$-1\r\n"))
+			} else {
+				conn.Write(fmt.Appendf(nil, "$%d\r\n%s\r\n", len(match.Val), match.Val))
+			}
+
 			
+
 		default:
 			conn.Write(fmt.Appendf(nil, "-ERR unknown command '%s'\r\n", command))
 		}
 	}
 }
+

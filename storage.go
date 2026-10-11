@@ -8,11 +8,18 @@ import (
 type Item struct {
 	val string
 	expiresAt time.Time
+	vector []float32
 }
 
 type Storage struct {
 	mu sync.RWMutex
 	data map[string]Item
+}
+
+type VectorMatch struct {
+	Key string
+	Val string
+	Score float32
 }
 
 func NewStorage() *Storage {
@@ -73,3 +80,54 @@ func (s *Storage) Set(key string, val string, ttl time.Duration) {
 		s.mu.Unlock()
 	}
  }
+
+
+  func (s *Storage) SetVector(key string, val string, vector []float32, ttl time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var expiresAt time.Time
+	if ttl > 0 {
+		expiresAt = time.Now().Add(ttl)
+	}
+
+	s.data[key] = Item{
+		val: val,
+		expiresAt: expiresAt,
+		vector: vector,
+	}
+  }
+
+  func (s *Storage) QueryVector(target []float32, threshold float32) (*VectorMatch, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	now := time.Now()
+	var bestMatch *VectorMatch
+	bestScore := float32(-1.0)
+
+	for key, item := range s.data {
+		if !item.expiresAt.IsZero() && now.After(item.expiresAt) {
+			continue
+		}
+
+		if len(item.vector) == 0 {
+			continue
+		}
+
+		score, err := CosineSimilarity(target, item.vector)
+		if err == nil && score >= threshold && score > bestScore {
+			bestScore = score
+			bestMatch = &VectorMatch{
+				Key: key,
+				Val: item.val,
+				Score: score,
+			}
+		}
+	}
+
+	if bestMatch == nil {
+		return nil, false
+	}
+	return bestMatch, true
+  }
